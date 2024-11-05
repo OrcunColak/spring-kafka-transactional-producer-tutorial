@@ -1,11 +1,11 @@
 package com.colak.springtutorial.producer;
 
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.common.serialization.StringDeserializer;
-import org.checkerframework.checker.units.qual.K;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.stream.StreamSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
@@ -33,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
                 "offsets.topic.replication.factor=1" // Set replication factor for the offsets topic
         }
 )
+@Slf4j
 class TextProducerTest {
 
     @Autowired
@@ -73,11 +75,47 @@ class TextProducerTest {
 
     @Test
     void testTransactionRollbackOnError() {
-        try {
-            producer.sendMessages(List.of("message1", "error", "message2"));
-        } catch (RuntimeException e) {
-            // Expected exception due to the simulated error
-        }
+        // Use assertThrows to check for the expected exception
+        List<String> messageList = List.of("message1", "error", "message2");
+        RuntimeException exception = assertThrows(RuntimeException.class,
+                () -> producer.sendMessagesWithTransactionTemplate(messageList));
+
+        // Verify that the exception message matches what you expect
+        assertEquals("Simulated failure", exception.getMessage());
+
+        // Ensure no messages were received because the transaction rolled back
+        ConsumerRecords<String, String> consumerRecords = KafkaTestUtils.getRecords(consumer, Duration.ofSeconds(1));
+        assertTrue(consumerRecords.isEmpty());
+    }
+
+    @Test
+    void testSuccessfulMessageSendWithTransactionTemplate() {
+        List<String> expectedMessages = List.of("message1", "message2");
+        producer.sendMessagesWithTransactionTemplate(expectedMessages);
+
+        ConsumerRecords<String, String> consumerRecords = KafkaTestUtils.getRecords(consumer, Duration.ofSeconds(1));
+
+        // Verify the number of records consumed
+        assertEquals(2, consumerRecords.count(), "Should consume two messages");
+
+        // Verify the consumed records
+        Iterable<ConsumerRecord<String, String>> iterable = consumerRecords.records(TextProducer.TOPIC);
+        List<String> actualMessages = StreamSupport.stream(iterable.spliterator(), false)
+                .map(ConsumerRecord::value)
+                .toList();
+
+        assertEquals(expectedMessages, actualMessages, "The consumed messages should match the sent messages");
+    }
+
+    @Test
+    void testTransactionRollbackOnErrorWithTransactionTemplate() {
+        // Use assertThrows to check for the expected exception
+        List<String> messageList = List.of("message1", "error", "message2");
+        RuntimeException exception = assertThrows(RuntimeException.class,
+                () -> producer.sendMessagesWithTransactionTemplate(messageList));
+
+        // Verify that the exception message matches what you expect
+        assertEquals("Simulated failure", exception.getMessage());
 
         // Ensure no messages were received because the transaction rolled back
         ConsumerRecords<String, String> consumerRecords = KafkaTestUtils.getRecords(consumer, Duration.ofSeconds(1));

@@ -11,7 +11,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
 @RequiredArgsConstructor
@@ -47,10 +46,16 @@ public class TextProducer {
         }
     }
 
-    public void sendMessageWithTransaction2(String message) {
+    public void sendMessagesWithTransactionTemplate(List<String> messages) {
         kafkaTemplate.executeInTransaction(kafkaOperations -> {
-            kafkaOperations.send(TOPIC, message);
+            for (String message : messages) {
+                kafkaOperations.send(TOPIC, message);
 
+                // Simulate an error in the middle of sending messages
+                if ("error".equals(message)) {
+                    throw new RuntimeException("Simulated failure");
+                }
+            }
             // Return any value to indicate transaction success
             return true;
         });
